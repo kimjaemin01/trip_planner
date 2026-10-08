@@ -1,0 +1,6 @@
+region_id,judgment,reason
+4,OPTIONAL,근교 관광지 간 이동은 차가 편할 수 있음
+5,OPTIONAL,근교 관광지 간 이동은 차가 편할 수 있음
+6,OPTIONAL,근교 관광지 간 이동은 차가 편할 수 있음
+15,NOT_RECOMMEND,지하철·버스로 충분 주차 불편
+19,RECOMMEND,아소산 일대 대중교통 부족

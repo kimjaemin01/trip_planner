@@ -1,0 +1,9 @@
+style_id,name,daily_visit_count,stay_tendency
+1,휴양,2,MAX
+2,쇼핑,3,REC
+3,미식,3,REC
+4,하루 3만보 관광,5,MIN
+5,한적한 여유,2,MAX
+6,자연,3,REC
+7,온천,2,MAX
+8,테마파크,2,REC

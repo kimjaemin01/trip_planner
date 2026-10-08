@@ -1,0 +1,7 @@
+area_id,country_id,name,main_airport,avg_stay_min,avg_stay_max,sort_order
+1,1,수도권·간토,HND|NRT,4,5,1
+2,1,간사이·주고쿠,KIX|HIJ,4,5,2
+3,1,시코쿠,TAK|MYJ,3,4,3
+4,1,규슈,FUK,3,4,4
+5,1,홋카이도,CTS,4,5,5
+6,1,오키나와,OKA,4,4,6
