@@ -1,6 +1,8 @@
 -- =========================================================
 -- 여행 플래너 앱 - 기준 데이터 테이블 (일본 MVP)
--- 실행: DBeaver → travel DB → SQL 편집기 → 전체 실행 (Alt+X)
+-- 실행: 코끼리(PostgreSQL 확장) → New Query → 전체 붙여넣기 → ▷
+-- 이후: seed.sql 실행 (데이터)
+-- 새 국가·지역은 코드 수정 없이 INSERT → is_active = TRUE 로 공개
 -- =========================================================
 
 -- 0. PostGIS 확장 (DB당 1회)
@@ -12,7 +14,14 @@ CREATE TABLE country (
     name         VARCHAR(50)  NOT NULL,
     currency     VARCHAR(10)  NOT NULL,
     voltage      VARCHAR(20),
-    plug_type    VARCHAR(20)
+    plug_type    VARCHAR(20),
+    is_active        BOOLEAN      NOT NULL DEFAULT FALSE,
+    sort_order       INTEGER,
+    image_url        VARCHAR(500),
+    routing_provider VARCHAR(20)  NOT NULL DEFAULT 'GOOGLE'
+        CONSTRAINT chk_country_routing_provider CHECK (routing_provider IN ('GOOGLE','KAKAO','AMAP')),
+    place_provider   VARCHAR(20)  NOT NULL DEFAULT 'GOOGLE'
+        CONSTRAINT chk_country_place_provider   CHECK (place_provider   IN ('GOOGLE','KAKAO','AMAP'))
 );
 
 -- 2. 국가 공통 언어
@@ -31,7 +40,9 @@ CREATE TABLE area (
     main_airport  VARCHAR(50),
     avg_stay_min  NUMERIC(3,1),
     avg_stay_max  NUMERIC(3,1),
-    sort_order    INTEGER
+    sort_order    INTEGER,
+    is_active     BOOLEAN      NOT NULL DEFAULT FALSE,
+    image_url     VARCHAR(500)
 );
 
 -- 4. 세부 도시/관광지
@@ -49,7 +60,10 @@ CREATE TABLE region (
     base_region_id  INTEGER REFERENCES region(region_id),
     group_id        INTEGER,
     description     VARCHAR(200),
-    geog            GEOGRAPHY(POINT, 4326)
+    geog            GEOGRAPHY(POINT, 4326),
+    is_active       BOOLEAN       NOT NULL DEFAULT FALSE,
+    sort_order      INTEGER,
+    image_url       VARCHAR(500)
 );
 
 -- 5. 지역 특정 언어 (일본은 비어있음)
@@ -96,7 +110,7 @@ CREATE TABLE region_rent_exception (
 
 
 -- =========================================================
--- [CSV import 끝난 뒤 실행] region 좌표 → geog 컬럼 채우기
+-- [seed.sql에 포함됨] region 좌표 → geog 컬럼 채우기
 -- =========================================================
 -- UPDATE region SET geog = ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography;
 

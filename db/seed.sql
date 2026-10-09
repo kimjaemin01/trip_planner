@@ -363,6 +363,12 @@ INSERT INTO region_rent_exception (region_id, judgment, reason) VALUES
   (15, 'NOT_RECOMMEND', '지하철·버스로 충분 주차 불편'),
   (19, 'RECOMMEND', '아소산 일대 대중교통 부족');
 
+-- 일본 공개 (is_active)
+UPDATE country SET is_active = TRUE, sort_order = 1 WHERE country_id = 1;
+UPDATE area    SET is_active = TRUE WHERE country_id = 1;
+UPDATE region  SET is_active = TRUE, sort_order = region_id
+ WHERE area_id IN (SELECT area_id FROM area WHERE country_id = 1);
+
 -- region 좌표 → geog
 UPDATE region SET geog = ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography;
 

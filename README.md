@@ -6,6 +6,7 @@
 ---
 
 ## 목차
+0. [핵심 설계 원칙](#0-핵심-설계-원칙)
 1. [기능 정의](#1-기능-정의)
 2. [화면 흐름](#2-화면-흐름)
 3. [기술 스택](#3-기술-스택)
@@ -16,6 +17,36 @@
 8. [추천 로직](#8-추천-로직)
 9. [환경 세팅 매뉴얼](#9-환경-세팅-매뉴얼)
 10. [개발 순서](#10-개발-순서)
+
+---
+
+## 0. 핵심 설계 원칙
+
+> **새 국가·지역 추가 = 코드 수정 없이 DB INSERT만** → 서버 재배포·앱 업데이트 없이 사용자 화면 반영
+
+| 규칙 | 내용 |
+|---|---|
+| 하드코딩 금지 | 앱·서버에 국가·지역명 직접 작성 X → 전부 DB 조회 |
+| 화면 = API 응답 | 국가 목록·지역 카드·추천도·근거 문구 전부 서버 데이터로 렌더링 |
+| 이미지 | 앱 내장 X → `image_url` 컬럼 |
+| 노출 스위치 | `is_active` → 데이터 준비 끝나면 `TRUE` |
+| 정렬 | `sort_order` 컬럼 |
+| 외부 API 선택 | `country.routing_provider / place_provider` (GOOGLE / KAKAO / AMAP) → 서버가 값 보고 구현체 선택 |
+| 배치 | DB의 활성 국가·지역 전체 대상 → 새 지역 자동 계산 |
+| 캐시 | TTL or 관리자 갱신 API → 즉시 반영 |
+
+### 새 국가 추가 절차
+| 순서 | 작업 | 코드 수정 |
+|---|---|---|
+| 1 | CSV 작성 → INSERT문 변환 (country·area·region·스타일점수·렌트규칙) | ❌ |
+| 2 | INSERT (`is_active = FALSE`) | ❌ |
+| 3 | 배치 실행 → 이동시간·날씨 수집 | ❌ |
+| 4 | `UPDATE ... SET is_active = TRUE` | ❌ |
+| 5 | 앱 자동 노출 | ❌ |
+
+| 예외 | 내용 |
+|---|---|
+| 새 API 제공자 | 제주(KAKAO)·중국(AMAP)은 구현체 **1회** 개발 → 이후 같은 제공자 국가는 데이터만 |
 
 ---
 
@@ -253,7 +284,7 @@
 | 헤더 | 첫 줄 = 컬럼명 → import 시 헤더 포함 옵션 |
 | 빈 값 | NULL로 들어감 → 해당 컬럼 NULL 허용 |
 | 인코딩 | UTF-8 (엑셀로 열면 한글 깨질 수 있음 → VS Code로 편집) |
-| 방법 | PostgreSQL `COPY` or DBeaver → Import Data |
+| 방법 | `db/seed.sql` (CSV를 INSERT문으로 변환한 파일) — CSV 수정 시 seed.sql 재생성 |
 
 ---
 
@@ -262,11 +293,11 @@
 ### 기준 데이터
 | 테이블 | PK | FK | 주요 컬럼 | 소스 |
 |---|---|---|---|---|
-| country | country_id | | 이름, 통화, 전압, 플러그 | CSV |
+| country | country_id | | 이름, 통화, 전압, 플러그, is_active, sort_order, image_url, routing_provider, place_provider | CSV |
 | country_language | (country_id, language) | country | 공통 여부 | CSV |
 | region_language | (region_id, language) | region | 지역 특정 언어 | 직접 입력 |
-| area | area_id | country | 이름, 대표공항, 평균체류 | CSV |
-| region | region_id | area, 자기참조(거점) | 좌표, 체류 min/rec/max, 유형, 묶음, 한줄근거 | CSV |
+| area | area_id | country | 이름, 대표공항, 평균체류, is_active, image_url | CSV |
+| region | region_id | area, 자기참조(거점) | 좌표, 체류 min/rec/max, 유형, 묶음, 한줄근거, is_active, sort_order, image_url | CSV |
 | travel_style | style_id | | 하루 방문 수, 체류 성향 | CSV |
 | region_style_score | (region_id, style_id) | region, style | 점수 | CSV |
 | rent_rule | (area_id, month) | area | 판정, 근거 | CSV |
@@ -477,10 +508,26 @@ docker ps
 ### 11. DB 테이블 생성 + 데이터 넣기 (최초 1회)
 | 순서 | 작업 |
 |---|---|
-| 1 | VS Code PostgreSQL 확장 → New Query → `db/schema.sql` 붙여넣기 → ▷ 실행 |
-| 2 | 터미널: `docker cp C:\trip_planner\data travel-db:/tmp/data` |
-| 3 | New Query → `db/import.sql` 붙여넣기 → ▷ 실행 |
-| 4 | 마지막 결과 행 수 = 6번 표와 일치 확인 |
+| 1 | 코끼리 → New Query → `db/schema.sql` 붙여넣기 → ▷ |
+| 2 | New Query → `db/seed.sql` 붙여넣기 → ▷ |
+| 3 | 마지막 결과 행 수 = 6번 표와 일치 확인 |
+
+> `docker cp` + `import.sql` 방식은 PC에 따라 파일 복사가 안 되는 문제 → **seed.sql(INSERT문)로 통일**
+
+### DB 변경 적용 (기존 DB가 있는 PC)
+| 파일 | 내용 | 실행 |
+|---|---|---|
+| `db/alter_v2.sql` | is_active·image_url·sort_order·provider 컬럼 추가 | 학교·집 각 1회 |
+
+> Git Pull은 **파일만** 받아옴 → DB 구조 변경은 각 PC에서 SQL 직접 실행
+
+### 재부팅 후 매번
+| 순서 | 작업 |
+|---|---|
+| 1 | Docker Desktop 실행 → Engine running |
+| 2 | Source Control → **Pull** |
+| 3 | `docker start travel-db` |
+| 4 | `cd C:\trip_planner\backend` → `.\gradlew bootRun` |
 
 ### 12. 백엔드 로컬 설정 (clone 후 필수)
 > `application-local.properties`는 Git에 안 올라감 (.gitignore) → PC마다 직접 생성
@@ -511,7 +558,7 @@ cd C:\trip_planner\backend
 trip_planner/
 ├─ README.md
 ├─ data/      CSV 8개
-├─ db/        schema.sql, import.sql
+├─ db/        schema.sql, seed.sql, alter_v2.sql (import.sql 미사용)
 ├─ backend/   Spring Boot 4.1.1 (Gradle, Java 21)
 └─ app/       Flutter (예정)
 ```
@@ -540,7 +587,7 @@ trip_planner/
 ### 개발
 | 단계 | 작업 |
 |---|---|
-| 1 | DB 테이블 생성 + CSV import ✅ → `db/schema.sql` 실행 → `docker cp C:\trip_planner\data travel-db:/tmp/data` → `db/import.sql` 실행 |
+| 1 | DB 테이블 생성 + 데이터 ✅ → `db/schema.sql` → `db/seed.sql` (+ 기존 DB는 `db/alter_v2.sql`) |
 | 2 | Spring Boot 기본 구조 ✅ + 기준 데이터 조회 API (국가·광역·세부·스타일) ⬜ |
 | 3 | 이동시간 행렬 배치 (Google Routes) |
 | 4 | 추천 동선 로직 + API |
