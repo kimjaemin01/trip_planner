@@ -511,6 +511,7 @@ docker ps
 | 1 | 코끼리 → New Query → `db/schema.sql` 붙여넣기 → ▷ |
 | 2 | New Query → `db/seed.sql` 붙여넣기 → ▷ |
 | 3 | 마지막 결과 행 수 = 6번 표와 일치 확인 |
+| 4 | New Query → `db/matrix_v3.sql` 붙여넣기 → ▷ (지역 간 이동시간 추정값) |
 
 > `docker cp` + `import.sql` 방식은 PC에 따라 파일 복사가 안 되는 문제 → **seed.sql(INSERT문)로 통일**
 
@@ -518,6 +519,7 @@ docker ps
 | 파일 | 내용 | 실행 |
 |---|---|---|
 | `db/alter_v2.sql` | is_active·image_url·sort_order·provider 컬럼 추가 | 학교·집 각 1회 |
+| `db/matrix_v3.sql` | area.ground_group + region_travel_matrix 테이블·추정값 | 학교·집 각 1회 (재실행 안전) |
 
 > Git Pull은 **파일만** 받아옴 → DB 구조 변경은 각 PC에서 SQL 직접 실행
 
@@ -542,6 +544,18 @@ spring.datasource.username=travel
 spring.datasource.password=travel1234
 ```
 
+### application.properties (Git 포함)
+```properties
+spring.application.name=backend
+spring.profiles.active=local
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.open-in-view=false
+spring.jpa.show-sql=true
+server.servlet.encoding.charset=UTF-8
+server.servlet.encoding.force=true
+```
+> `encoding.force` 없으면 PowerShell·Flutter에서 한글 깨짐
+
 ### 13. 백엔드 실행
 ```powershell
 cd C:\trip_planner\backend
@@ -558,9 +572,9 @@ cd C:\trip_planner\backend
 trip_planner/
 ├─ README.md
 ├─ data/      CSV 8개
-├─ db/        schema.sql, seed.sql, alter_v2.sql (import.sql 미사용)
+├─ db/        schema.sql, seed.sql, alter_v2.sql, matrix_v3.sql (import.sql 미사용)
 ├─ backend/   Spring Boot 4.1.1 (Gradle, Java 21)
-└─ app/       Flutter (예정)
+└─ app/       Flutter (추천 모드 화면)
 ```
 
 ### 주의
@@ -569,6 +583,59 @@ trip_planner/
 | PATH 반영 | 설치 후 VS Code 완전 종료 → 재실행 |
 | iOS 빌드 | Mac + Xcode 필수 → Windows는 Android로 개발·테스트 |
 | API 키 | 코드·Git에 직접 넣지 말 것 → 환경변수 / `.gitignore` |
+
+---
+
+## 9-1. 백엔드 API
+
+| Method | URL | 설명 |
+|---|---|---|
+| GET | `/api/styles` | 여행 스타일 8개 |
+| GET | `/api/countries` | 공개 국가 (is_active, sort_order) |
+| GET | `/api/countries/{id}/areas?styles=1,2` | 광역 + 추천도(상위 3개 세부 평균) + topRegions |
+| GET | `/api/areas/{id}/regions?styles=1,2` | 세부 지역 + 추천도(선택 스타일 점수 평균) + 한줄 근거 |
+| GET | `/api/rent-advice?areaIds=1,5&month=7` | 렌트 추천 여부 (or `startDate`·`endDate`, `regionIds`로 세부 예외) |
+| POST | `/api/recommend/route` | 추천 모드: 광역 복수 + 스타일 + 기간 → 최적 동선 + 대안 2개 |
+| POST | `/api/route/check` | 직접 선택 모드: 세부 지역(순서) + 기간 → 가능 여부, 초과 시 대안 3개 |
+
+### POST 테스트 (PowerShell, 한글 안 깨지게 파일로 저장)
+```powershell
+$body = '{"countryId":1,"areaIds":[1,2],"styleIds":[1],"tripDays":5}'
+$r = Invoke-WebRequest -Uri http://localhost:8080/api/recommend/route -Method Post -ContentType "application/json" -Body $body -UseBasicParsing
+[Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray()) | Out-File C:\trip_planner\result.json -Encoding utf8
+code C:\trip_planner\result.json
+```
+| 요청 필드 | 내용 |
+|---|---|
+| recommend/route | countryId, areaIds, styleIds(1~2), tripDays or startDate+endDate |
+| route/check | countryId, regionIds(방문 순서, 최대 15), styleIds(선택), tripDays or startDate+endDate |
+
+## 9-2. Flutter 앱 실행
+
+| 순서 | 작업 |
+|---|---|
+| 1 | 백엔드 실행 (`.\gradlew bootRun`) |
+| 2 | Android Studio → Device Manager → 에뮬레이터 ▶ |
+| 3 | 새 터미널: `cd C:\trip_planner\app` → `flutter run` |
+
+| 항목 | 내용 |
+|---|---|
+| 서버 주소 | 에뮬레이터 → 내 PC = `http://10.0.2.2:8080` (`lib/api/api_client.dart`) |
+| HTTP 허용 | `android/app/src/main/AndroidManifest.xml` → `<application android:usesCleartextTraffic="true"` |
+| 실행 중 | `r` 핫 리로드 / `R` 재시작 / `q` 종료 |
+
+| 빌드 에러 | 해결 |
+|---|---|
+| `NDK 28.2.13676358 not installed` | Android Studio → SDK Manager → SDK Tools → Show Package Details → NDK (Side by side) → 해당 버전 체크 → Apply |
+| 에뮬레이터 첫 실행 구글 로그인 화면 | 전부 Skip |
+
+### 앱 구조 (`app/lib/`)
+| 폴더 | 내용 |
+|---|---|
+| `api/` | 백엔드 호출 (UTF-8 디코딩) |
+| `models/` | 응답 모델 + TripDraft (화면 간 입력값) |
+| `widgets/` | 별점, 하단 버튼, 에러 화면 등 공통 |
+| `screens/` | 홈 → 스타일 → 국가 → 광역 → 기간 → 추천 동선 결과 |
 
 ---
 
@@ -588,10 +655,10 @@ trip_planner/
 | 단계 | 작업 |
 |---|---|
 | 1 | DB 테이블 생성 + 데이터 ✅ → `db/schema.sql` → `db/seed.sql` (+ 기존 DB는 `db/alter_v2.sql`) |
-| 2 | Spring Boot 기본 구조 ✅ + 기준 데이터 조회 API (국가·광역·세부·스타일) ⬜ |
-| 3 | 이동시간 행렬 배치 (Google Routes) |
-| 4 | 추천 동선 로직 + API |
-| 5 | Flutter 화면 (스타일 → 국가 → 광역 → 세부/기간 → 결과) |
+| 2 | Spring Boot 기본 구조 + 기준 데이터 조회 API (국가·광역·세부·스타일·추천도·렌트) ✅ |
+| 3 | 이동시간 행렬 — 추정값 ✅ (`matrix_v3.sql`) / Google Routes 배치 ⬜ |
+| 4 | 추천 동선 로직 + API ✅ (추천 모드 + 직접 선택 모드) / 입·출국 공항 반영 ⬜ |
+| 5 | Flutter 화면 — 추천 모드 ✅ (스타일 → 국가 → 광역 → 기간 → 결과) / 직접 선택 모드 ⬜ |
 | 6 | 지도 + 오프라인 저장 + 메모 |
 | 7 | 비용·날씨·축제·숙소 |
 | 8 | 후기·공유·정산 |
